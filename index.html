@@ -379,11 +379,11 @@
     'BNBUSDT': '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
 };
 
-        const strategies = {
+       const strategies = {
             scalping: { 
                 name: 'Scalping', 
                 description: 'Rapide RSI+MACD', 
-                minTradeInterval: 180000,    // 3 minutes (était 30s)
+                minTradeInterval: 180000,
                 rsiBuyThreshold: 40,
                 rsiBuyStrong: 30,
                 rsiSellThreshold: 60,
@@ -394,7 +394,7 @@
             swing: { 
                 name: 'Swing', 
                 description: 'Positions EMA', 
-                minTradeInterval: 900000,    // 15 minutes (était 5min)
+                minTradeInterval: 900000,
                 rsiBuyThreshold: 35,
                 rsiBuyStrong: 25,
                 rsiSellThreshold: 70,
@@ -402,7 +402,7 @@
                 takeProfit: 3.0,
                 stopLoss: -2.0
             }
-        },
+        };
 
         window.addEventListener('DOMContentLoaded', () => {
             console.log('🚀 Bot chargé avec ethers.js');
