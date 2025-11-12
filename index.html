@@ -1825,7 +1825,130 @@
                 </div>
             `).join('');
         }
+// Système anti-veille pour garder le bot actif
+        let wakeLock = null;
+        let audioContext = null;
+        
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('🔓 Wake Lock activé - l\'écran restera allumé');
+                    
+                    wakeLock.addEventListener('release', () => {
+                        console.log('⚠️ Wake Lock relâché');
+                    });
+                }
+            } catch (err) {
+                console.log('⚠️ Wake Lock non disponible:', err.message);
+            }
+        }
+        
+        function keepAlive() {
+            // Créer un contexte audio silencieux pour empêcher la mise en veille
+            if (!audioContext) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    gainNode.gain.value = 0.001; // Volume quasi nul
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    oscillator.start();
+                    console.log('🔊 Audio Keep-Alive activé (silencieux)');
+                } catch (e) {
+                    console.log('⚠️ Audio Context non disponible');
+                }
+            }
+        }
 
+        function startBot() {
+            const strategy = strategies[state.selectedStrategy];
+            
+            const intervalDisplay = strategy.minTradeInterval >= 60000 
+                ? `${strategy.minTradeInterval / 60000} min` 
+                : `${strategy.minTradeInterval / 1000}s`;
+            
+            console.log(`\n${'🚀'.repeat(35)}`);
+            console.log(`🤖 BOT DE TRADING DÉMARRÉ`);
+            console.log(`${'🚀'.repeat(35)}`);
+            console.log(`⏰ ${new Date().toLocaleString('fr-FR')}`);
+            console.log(`💰 Capital: ${state.tradingCapital.toFixed(2)} USDT`);
+            console.log(`📊 Stratégie: ${strategy.name}`);
+            console.log(`💎 Mode: ${state.tradingMode === 'real' ? 'RÉEL' : 'SIMULATION'}`);
+            console.log(`🤖 Type: ${state.autoMode ? 'Automatique' : 'Manuel'}`);
+            console.log(`⏱️ Cooldown: ${intervalDisplay} entre chaque trade`);
+            console.log(`${'='.repeat(70)}\n`);
+            
+            // Activer les systèmes anti-veille
+            requestWakeLock();
+            keepAlive();
+            
+            let logCounter = 0;
+            let lastHeartbeat = Date.now();
+            
+            // Fonction de vérification du heartbeat
+            const checkHeartbeat = () => {
+                const now = Date.now();
+                const timeSinceLastBeat = now - lastHeartbeat;
+                
+                // Si plus de 30 secondes sans heartbeat, l'onglet était probablement en veille
+                if (timeSinceLastBeat > 30000) {
+                    console.warn(`⚠️ RÉVEIL DÉTECTÉ après ${Math.floor(timeSinceLastBeat/1000)}s de veille`);
+                    console.log('🔄 Reconnexion WebSocket et mise à jour des indicateurs...');
+                    
+                    // Reconnecter le WebSocket
+                    connectWebSocket();
+                    
+                    // Forcer la mise à jour des indicateurs
+                    if (state.priceHistory.length >= 50) {
+                        updateIndicators();
+                    }
+                }
+                
+                lastHeartbeat = now;
+            };
+            
+            botInterval = setInterval(() => {
+                // Vérifier le heartbeat à chaque itération
+                checkHeartbeat();
+                
+                if (state.priceHistory.length < 50) {
+                    console.log(`⏳ Collecte des données... ${state.priceHistory.length}/50 prix`);
+                    return;
+                }
+                
+                const now = Date.now();
+                const timeRemaining = strategy.minTradeInterval - (now - lastTradeTime);
+                
+                if (timeRemaining > 0) {
+                    // Afficher le temps restant en minutes ou secondes
+                    const timeDisplay = timeRemaining >= 60000 
+                        ? `${Math.ceil(timeRemaining / 60000)} min` 
+                        : `${Math.ceil(timeRemaining / 1000)}s`;
+                    
+                    // Log toutes les 10 itérations (environ toutes les 50 secondes)
+                    if (logCounter % 10 === 0) {
+                        console.log(`⏰ Cooldown: ${timeDisplay} restantes | Prix: $${state.currentPrice.toFixed(6)} | RSI: ${state.indicators.rsi.toFixed(1)} | Position: ${state.currentPosition ? '🟢 LONG' : '⚪ AUCUNE'}`);
+                    }
+                    logCounter++;
+                    return;
+                }
+                
+                const signal = getTradeSignal();
+                if (signal.signal && signal.confidence > 0.65) {
+                    console.log(`\n🎯 SIGNAL DÉTECTÉ: ${signal.signal} (Confiance: ${(signal.confidence * 100).toFixed(1)}%)`);
+                    executeTrade(signal.signal, signal.confidence);
+                    logCounter = 0;
+                } else {
+                    // Log toutes les 10 itérations même sans signal
+                    if (logCounter % 10 === 0 && !signal.signal) {
+                        console.log(`⏳ Recherche de signal... Prix: $${state.currentPrice.toFixed(6)} | RSI: ${state.indicators.rsi.toFixed(1)} | Position: ${state.currentPosition ? '🟢 LONG' : '⚪ AUCUNE'}`);
+                    }
+                    logCounter++;
+                }
+            }, 5000);
+        }
         function updateUI() {
             if (state.isConnected) {
                 document.getElementById('connectBtn').className = 'flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all bg-green-600 hover:bg-green-700';
